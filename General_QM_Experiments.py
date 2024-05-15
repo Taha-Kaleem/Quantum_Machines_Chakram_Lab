@@ -1,5 +1,6 @@
-import config
-
+import config as config
+import os
+from slab.instruments import InstrumentManager
 """
 The following are the ip address, opx port, octave port, name
 of OPX controller, and the name of the octave.
@@ -15,7 +16,7 @@ octave = "octave1"
 
 
 """
-CQED creates a quantum machine with the OPX and Octave that 
+Creates a quantum machine with the OPX and Octave that 
 allows you to run experiments on a specified number of qubits and
 resonators.
 
@@ -43,11 +44,21 @@ waveforms (both digital and analog) and integration weights that will be used,
 create pulses, and add these pulses as operations to associated elements. An 
 example is commented at the bottom of this file. 
 
-Important to note that we do not change the correction matrix in the mixers. We do,
-however, change the LO and IF frequencies
+Alternatively, you can also create a configuration file using quantum machines'
+documentation and pass it directly into the initialization (this is done
+in the Single_Qubit_Experiments class).
+
+It is important to note that we do not change the correction matrix in the mixers. We do,
+however, change the LO and IF frequencies.
+
+We also have an instrument manager from the Schuster lab slab library (https://github.com/SchusterLab/slab)
+that allows us to add a variety of instruments such as current sources, network analyzers, etc, that
+we can use in our experiments. 
+
+Note that you will need to change the config path to the instruments.cfg file.
 """
 OPX_config = config.config
-
+instrumentConfigPath = os.getcwd() + "\\instruments.cfg"
 # TODO: change name to qm_opx_config_handler
 class General_QM_Exps():
     """
@@ -62,6 +73,10 @@ class General_QM_Exps():
         
         for element, driveFreq in elements.items():
             self.addChangeElement(element, self.createElement(driveFreq, {}))
+        
+        self.instrumentManager = InstrumentManager(config_path=instrumentConfigPath)
+        
+
         super().__init__()
 
     """

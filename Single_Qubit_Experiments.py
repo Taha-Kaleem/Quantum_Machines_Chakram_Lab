@@ -37,9 +37,10 @@ import os
 import time
 import matplotlib.pyplot as plt
 from qualang_tools.units import unit
-import config
+import config as config
 import h5py
-
+import numpy as np
+from slab.instruments import InstrumentManager
 from OPXexperiments import OPXexp
 from General_QM_Experiments import General_QM_Exps
 
@@ -66,41 +67,6 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
     def __init__(self, initConfig = initialConfiguration):
         """OPX configuration"""
 
-        #Below we open the experiments config file where we define our experimental parameters
-
-        # experiment_json = open("experiments.json")
-        # self.experiment_config = json.load(experiment_json)
-        # # experiment_json.close()
-
-        # #This creates the elements that we are using and names them qubit and resonator
-        # #To do: add support for second qubit
-        # self.elements = {
-        # }
-
-        # self.OPX_config = initialConfiguration
-        # super().__init__(self.elements, initConfig)
-
-
-        # ###Adding relevant qubit and resonator operations ###
-        # qubitOperations = {
-        #         'CW': 'CW',
-        #         'saturation': 'saturation_pulse',
-        #         'saturation_multi': 'saturation_pulse_multi',
-        #         'gaussian': 'gaussian_pulse',
-        #         'test':'test_pulse',
-        #         'pi': 'pi_pulse',
-        #         'marker': 'marker_pulse',
-        #     }
-        # resonatorOperations = {
-        #         'CW': 'CW',
-        #         'saturation': 'saturation_pulse',
-        #         'long_readout': 'long_readout_pulse',
-        #         'readout': 'readout_pulse',
-        #         'test':'test_readout_pulse',
-        #     }
-
-        # self.changeElement('qubit', 'operations', qubitOperations)
-        # self.changeElement('resonator', 'operations', resonatorOperations)
         super().__init__({}, initConfig)
         self.elements = list(self.OPX_config['elements'].keys())
         """Setup complete, now we can run octave programs"""
@@ -161,6 +127,12 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
             'qubit', lo_source=RFInputLOSource.Internal, if_mode_i=IFMode.direct, if_mode_q=IFMode.direct
         )
 
+        ### Loads calibration data from calibration_db.json (note: to calibrate need to add more mixer calibrations, need to run calibrate function within this class)###
+        for element in self.elements:
+            if("mixInputs" in self.OPX_config['elements'][element]): 
+                self.qm.octave.calibrate_element(element, {}, close_open_quantum_machines=True)
+        self.reloadOPXConfig()
+
         # if(calibration):
         #     self.paramFile = paramFile
         #     with open(paramFile, 'r') as f:
@@ -193,7 +165,9 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
     you to create a new config file.
     """
 
-    def reloadOPXConfig(self, opxConfig):
+    def reloadOPXConfig(self, opxConfig = None):
+        if(opxConfig is None):
+            opxConfig = self.OPX_config
         self.OPX_config = opxConfig
 
         self.qm = self.qmm.open_qm(self.OPX_config)
@@ -277,6 +251,8 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
     We can then pass this to the calibrate_element function 
 
     Calibrating requires you to have already started the octave with the start_QM_octave function. 
+
+    
     """
     def calibrate(self, paramFile = "calibration_params.json"):
 
@@ -312,6 +288,10 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
         *gain: type = float, description: value from -10db to 20 dB that defines
          the gain from rf output, constraints: ensure that any output is within
          the limits of the octave and the qubit you are running
+        *dc_current: type = float, description: value in amps that defines a current
+        sent into the system from an external yokogawa gs200 current source. Used for 
+        sending a magnetic flux into the qubit (for flux-tunable qubits such as 
+        SNAILs)
     Returns:
         *results: type = dictionary, contents =  {
             "I": np.array(I), #values of real part of signal received
@@ -325,9 +305,9 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
         }
 
     """
-    def RUN_experiment(self, experiment_name, config, elementsAndGains = None, paramFile = "calibration_params.json"):
+    def RUN_experiment(self, experiment_name, config, elementsAndGains = None, paramFile = "calibration_params.json", dc_current = None):
         
-        
+    
         #program_and_parameters = self.implemented_experiments[experiment_name](self.experiment_config[experiment_name])
         experiment_params = {**config[experiment_name], **config["__Shared Values__"]}
         
@@ -347,11 +327,23 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
         if(elementsAndGains is not None):
             for element, gain in elementsAndGains.items():
                 self.qm.octave.set_rf_output_gain(element, gain)
+        ###Send a DC current into the qubit before we run our experiment 
+        if dc_current is not None:
+            currentSource = self.instrumentManager["YOKO1N"]
+            currentSource.set_mode('CURR')
+            currentSource.set_output(False)
+            currentSource.set_measure_state(state = True)
+            currentSource.set_current(dc_current)
+            currentSource.set_output(True)
 
         ### Run experiment and get results 
         job = self.qm.execute(prog)
         res = job.result_handles
         res.wait_for_all_values()
+
+        ### Turn off the current source once we have finished the experiment ###
+        if dc_current is not None:
+            currentSource.set_output(False)
 
         ### Convert I and Q signal to numpy arrays in Volts
         I = u.raw2volts(res.get("I").fetch_all())
@@ -370,6 +362,7 @@ class Single_Qubit_Experiments(General_QM_Exps, OPXexp):
         for key in program_and_parameters:
             if key != "prog":
                 results[key] = (str)(program_and_parameters[key])
+
 
         ### Final results dictionary ###
         return results

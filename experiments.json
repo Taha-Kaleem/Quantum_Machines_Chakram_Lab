@@ -1,13 +1,13 @@
 {
     "__Shared Values__" :{
-        "averages" : 50000,
+        "averages" : 1,
         "Tpi (ns)" : 32,
         "T1 time (ns)" : 35e6
 
     },
     "resspec" : {
         "IF frequency range (Hz)" : [100e6, 300e6],
-        "frequency intervals (Hz)" : 20e6,
+        "frequency intervals (Hz)" : 100e6,
         "reset time (units of T1 time)" : 5,
         "args" : []
     },
